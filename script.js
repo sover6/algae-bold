@@ -191,12 +191,23 @@
   ----------------------------------------------------------------*/
   (function () {
     var canvas = document.getElementById("revealCanvas");
-    var hero = document.querySelector(".hero-portrait-wrap");
-    if (!canvas || !hero || reduceMotion) return;
+    var hero = document.querySelector(".portrait-panel");
+    var portraitImg = document.querySelector(".hero-portrait");
+    if (!canvas || !hero || !portraitImg || reduceMotion) return;
 
     var ctx = canvas.getContext("2d");
     var mask = document.createElement("canvas");
     var mctx = mask.getContext("2d");
+    var personMask = document.createElement("canvas");
+    var personMaskCtx = personMask.getContext("2d");
+    var personAlphaImg = new Image();
+    var personAlphaReady = false;
+    personAlphaImg.onload = function () {
+      personAlphaReady = true;
+      buildPersonMask();
+    };
+    personAlphaImg.src = "assets/img/portrait-alpha.png";
+
     var artwork = null;
     var mouseX = -9999, mouseY = -9999;
     var running = false;
@@ -228,88 +239,134 @@
       actx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
     }
 
-    /* Neon, high-contrast, all-green microscopy-style artwork: tangled
-       glowing filament strands (like a threaded algae mat) plus a few
-       stippled, dotted "colony" spheres, on a near-black base so the
-       saturated green pops hard when revealed. */
+    /* Acrylic-pour / cell-art style: irregular organic "cells" of
+       varying size in a warm ochre/gold/green/blue palette, each with
+       a darker outline, nested smaller bubble-cells inside the larger
+       ones, and fine pale veining threading between regions — modeled
+       directly on a fluid-art pour painting reference rather than a
+       microscopy photo. */
     function buildArtwork(width, height) {
       var off = document.createElement("canvas");
       off.width = width;
       off.height = height;
       var actx = off.getContext("2d");
-      var rand = seededRandom(1337);
+      var rand = seededRandom(2024);
 
-      actx.fillStyle = "#050e09";
+      var bg = actx.createLinearGradient(0, 0, width, height);
+      bg.addColorStop(0, "#c98b2e");
+      bg.addColorStop(0.5, "#a9761f");
+      bg.addColorStop(1, "#7a5a1c");
+      actx.fillStyle = bg;
       actx.fillRect(0, 0, width, height);
 
-      var strandCount = Math.max(24, Math.round((width * height) / 30000));
-      for (var i = 0; i < strandCount; i++) {
-        var segs = 5 + Math.floor(rand() * 5);
+      var palette = [
+        "#d9a441", "#c9962e", "#e0b959", // gold / ochre
+        "#3c6b35", "#4f8a3d", "#6fae4a", // greens
+        "#215a52", "#2f7d72", // deep teal
+        "#2f6f8f", "#4fa3c9", // blue accents
+        "#7a4a2a", "#5c3a22", // brown
+        "#f2ece0" // cream highlight
+      ];
+
+      function organicBlob(cx, cy, radius, wobble) {
         var pts = [];
-        var x = rand() * width, y = rand() * height;
-        var angle = rand() * Math.PI * 2;
-        for (var s = 0; s <= segs; s++) {
-          pts.push([x, y]);
-          angle += (rand() - 0.5) * 1.5;
-          var stepLen = 36 + rand() * 80;
-          x += Math.cos(angle) * stepLen;
-          y += Math.sin(angle) * stepLen;
+        var n = 10;
+        for (var i = 0; i <= n; i++) {
+          var angle = (i / n) * Math.PI * 2;
+          var r = radius * (1 - wobble / 2 + rand() * wobble);
+          pts.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
         }
-
-        var hue = 96 + rand() * 44; // saturated yellow-green through green
-        var light = 42 + rand() * 18;
-
-        actx.save();
-        actx.shadowColor = "hsla(" + hue + ", 100%, " + light + "%, 0.95)";
-        actx.shadowBlur = 12 + rand() * 12;
-        actx.strokeStyle = "hsla(" + hue + ", 95%, " + (light + 8) + "%, 0.55)";
-        actx.lineWidth = 5 + rand() * 8;
-        actx.lineCap = "round";
-        actx.lineJoin = "round";
-        drawSmoothPath(actx, pts);
-        actx.stroke();
-        actx.restore();
-
-        actx.save();
-        actx.strokeStyle = "hsla(" + hue + ", 100%, " + (light + 30) + "%, 0.95)";
-        actx.lineWidth = 1.2 + rand() * 1.8;
-        actx.lineCap = "round";
-        actx.lineJoin = "round";
-        drawSmoothPath(actx, pts);
-        actx.stroke();
-        actx.restore();
+        return pts;
       }
 
-      var sphereCount = Math.max(4, Math.round((width * height) / 220000));
-      for (var sp = 0; sp < sphereCount; sp++) {
-        var cx = rand() * width;
-        var cy = rand() * height;
-        var R = 30 + rand() * 60;
-        var sHue = 78 + rand() * 30;
-
-        var grad = actx.createRadialGradient(cx, cy, 0, cx, cy, R);
-        grad.addColorStop(0, "hsla(" + sHue + ", 100%, 62%, 0.95)");
-        grad.addColorStop(0.7, "hsla(" + sHue + ", 100%, 40%, 0.55)");
-        grad.addColorStop(1, "hsla(" + sHue + ", 100%, 20%, 0)");
-        actx.fillStyle = grad;
+      function fillBlobPath(pts, color, outline, outlineWidth) {
         actx.beginPath();
-        actx.arc(cx, cy, R, 0, Math.PI * 2);
-        actx.fill();
-
-        var dotCount = 70;
-        for (var d = 0; d < dotCount; d++) {
-          var da = rand() * Math.PI * 2;
-          var dr = Math.sqrt(rand()) * R * 0.92;
-          var dx = cx + Math.cos(da) * dr;
-          var dy = cy + Math.sin(da) * dr;
-          actx.fillStyle = "hsla(" + (sHue + rand() * 12) + ", 100%, " + (70 + rand() * 20) + "%, " + (0.3 + rand() * 0.45) + ")";
-          actx.beginPath();
-          actx.arc(dx, dy, 0.8 + rand() * 1.6, 0, Math.PI * 2);
-          actx.fill();
+        actx.moveTo(pts[0][0], pts[0][1]);
+        for (var i = 1; i < pts.length; i++) {
+          var p0 = pts[i - 1], p1 = pts[i];
+          var mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
+          actx.quadraticCurveTo(p0[0], p0[1], mx, my);
         }
+        actx.closePath();
+        actx.fillStyle = color;
+        actx.fill();
+        if (outline) {
+          actx.strokeStyle = outline;
+          actx.lineWidth = outlineWidth || 2;
+          actx.stroke();
+        }
+      }
+
+      var macroCount = Math.max(8, Math.round((width * height) / 42000));
+      var macros = [];
+      for (var i = 0; i < macroCount; i++) {
+        var cx = rand() * width, cy = rand() * height;
+        var radius = 40 + rand() * 90;
+        var color = palette[Math.floor(rand() * palette.length)];
+        var pts = organicBlob(cx, cy, radius, 0.35);
+        fillBlobPath(pts, color, "rgba(30, 30, 20, 0.55)", 2.5 + rand() * 2);
+        macros.push({ cx: cx, cy: cy, radius: radius });
+      }
+
+      macros.forEach(function (m) {
+        var microCount = 3 + Math.floor(rand() * 6);
+        for (var j = 0; j < microCount; j++) {
+          var a = rand() * Math.PI * 2;
+          var d = rand() * m.radius * 0.7;
+          var mx = m.cx + Math.cos(a) * d;
+          var my = m.cy + Math.sin(a) * d;
+          var mr = 6 + rand() * 20;
+          var mcolor = palette[Math.floor(rand() * palette.length)];
+          var pts = organicBlob(mx, my, mr, 0.3);
+          fillBlobPath(pts, mcolor, "rgba(30, 30, 20, 0.5)", 1.4 + rand());
+        }
+      });
+
+      var scatterCount = Math.max(20, Math.round((width * height) / 9000));
+      for (var s = 0; s < scatterCount; s++) {
+        var sx = rand() * width, sy = rand() * height;
+        var sr = 3 + rand() * 12;
+        var scolor = palette[Math.floor(rand() * palette.length)];
+        var pts2 = organicBlob(sx, sy, sr, 0.4);
+        fillBlobPath(pts2, scolor, "rgba(30, 30, 20, 0.4)", 1 + rand());
+      }
+
+      var veinCount = 16;
+      for (var v = 0; v < veinCount; v++) {
+        var vx = rand() * width, vy = rand() * height;
+        actx.beginPath();
+        actx.moveTo(vx, vy);
+        var segs = 5 + Math.floor(rand() * 6);
+        var cx2 = vx, cy2 = vy;
+        var angle2 = rand() * Math.PI * 2;
+        for (var k = 0; k < segs; k++) {
+          angle2 += (rand() - 0.5) * 1.2;
+          cx2 += Math.cos(angle2) * (30 + rand() * 50);
+          cy2 += Math.sin(angle2) * (30 + rand() * 50);
+          actx.lineTo(cx2, cy2);
+        }
+        actx.strokeStyle = "rgba(245, 238, 220, " + (0.35 + rand() * 0.35) + ")";
+        actx.lineWidth = 1 + rand() * 1.8;
+        actx.stroke();
       }
 
       return off;
+    }
+
+    function buildPersonMask() {
+      var panelRect = hero.getBoundingClientRect();
+      var imgRect = portraitImg.getBoundingClientRect();
+      personMask.width = panelRect.width;
+      personMask.height = panelRect.height;
+      if (!personAlphaReady || !panelRect.width) return;
+      personMaskCtx.clearRect(0, 0, personMask.width, personMask.height);
+      personMaskCtx.drawImage(
+        personAlphaImg,
+        imgRect.left - panelRect.left,
+        imgRect.top - panelRect.top,
+        imgRect.width,
+        imgRect.height
+      );
     }
 
     function resize() {
@@ -319,6 +376,7 @@
       mask.width = rect.width;
       mask.height = rect.height;
       artwork = buildArtwork(rect.width, rect.height);
+      buildPersonMask();
     }
 
     function step() {
@@ -336,6 +394,13 @@
         mctx.beginPath();
         mctx.arc(mouseX, mouseY, 150, 0, Math.PI * 2);
         mctx.fill();
+      }
+
+      // Exclude her silhouette: the reveal should only ever show in the
+      // background around her, never over her actual photo.
+      if (personAlphaReady) {
+        mctx.globalCompositeOperation = "destination-out";
+        mctx.drawImage(personMask, 0, 0);
       }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -369,6 +434,11 @@
 
     resize();
     window.addEventListener("resize", resize);
+    if (portraitImg.complete) {
+      resize();
+    } else {
+      portraitImg.addEventListener("load", resize);
+    }
 
     if ("IntersectionObserver" in window) {
       var obs = new IntersectionObserver(

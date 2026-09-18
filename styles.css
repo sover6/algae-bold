@@ -9,6 +9,7 @@
   --ink: #07211d;
   --ink-soft: #3c5850;
   --light-bg: #f2f5ef;
+  --photo-bg: #bebdbf;
   --card-bg: #ffffff;
   --border: rgba(7, 33, 29, 0.1);
   --font-display: "Archivo Black", "Arial Black", sans-serif;
@@ -192,23 +193,19 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: -0.01em;
 }
 
-.hero-portrait-wrap {
+.portrait-panel {
   position: relative;
-  width: min(300px, 62vw);
-  aspect-ratio: 784 / 1100;
-  margin-top: 30px;
-  border-radius: 20px;
+  background: var(--photo-bg);
+  display: flex;
+  justify-content: center;
   overflow: hidden;
-  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
-  z-index: 2;
-  cursor: default;
 }
 
 .hero-portrait {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 480px;
+  height: auto;
 }
 
 .hero-tag {
