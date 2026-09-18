@@ -191,7 +191,7 @@
   ----------------------------------------------------------------*/
   (function () {
     var canvas = document.getElementById("revealCanvas");
-    var hero = document.querySelector(".bold-hero");
+    var hero = document.querySelector(".hero-portrait-wrap");
     if (!canvas || !hero || reduceMotion) return;
 
     var ctx = canvas.getContext("2d");
@@ -217,6 +217,21 @@
        photo (chaotic, clumpy, richly green) than a clean illustration,
        and deliberately distinct from the smooth ambient swirl canvas
        used elsewhere on the page. */
+    function drawSmoothPath(actx, pts) {
+      actx.beginPath();
+      actx.moveTo(pts[0][0], pts[0][1]);
+      for (var i = 1; i < pts.length - 1; i++) {
+        var xc = (pts[i][0] + pts[i + 1][0]) / 2;
+        var yc = (pts[i][1] + pts[i + 1][1]) / 2;
+        actx.quadraticCurveTo(pts[i][0], pts[i][1], xc, yc);
+      }
+      actx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    }
+
+    /* Neon, high-contrast, all-green microscopy-style artwork: tangled
+       glowing filament strands (like a threaded algae mat) plus a few
+       stippled, dotted "colony" spheres, on a near-black base so the
+       saturated green pops hard when revealed. */
     function buildArtwork(width, height) {
       var off = document.createElement("canvas");
       off.width = width;
@@ -224,66 +239,74 @@
       var actx = off.getContext("2d");
       var rand = seededRandom(1337);
 
-      var bg = actx.createLinearGradient(0, 0, width, height);
-      bg.addColorStop(0, "hsl(148, 60%, 9%)");
-      bg.addColorStop(0.5, "hsl(120, 55%, 13%)");
-      bg.addColorStop(1, "hsl(90, 50%, 10%)");
-      actx.fillStyle = bg;
+      actx.fillStyle = "#050e09";
       actx.fillRect(0, 0, width, height);
 
-      var clumpCount = Math.max(10, Math.round((width * height) / 90000));
-      for (var i = 0; i < clumpCount; i++) {
-        var clumpX = rand() * width;
-        var clumpY = rand() * height;
-        var clumpR = 90 + rand() * 220;
-        var blobCount = 35 + Math.floor(rand() * 45);
+      var strandCount = Math.max(24, Math.round((width * height) / 30000));
+      for (var i = 0; i < strandCount; i++) {
+        var segs = 5 + Math.floor(rand() * 5);
+        var pts = [];
+        var x = rand() * width, y = rand() * height;
+        var angle = rand() * Math.PI * 2;
+        for (var s = 0; s <= segs; s++) {
+          pts.push([x, y]);
+          angle += (rand() - 0.5) * 1.5;
+          var stepLen = 36 + rand() * 80;
+          x += Math.cos(angle) * stepLen;
+          y += Math.sin(angle) * stepLen;
+        }
 
-        for (var j = 0; j < blobCount; j++) {
-          var angle = rand() * Math.PI * 2;
-          var dist = Math.pow(rand(), 1.6) * clumpR;
-          var bx = clumpX + Math.cos(angle) * dist;
-          var by = clumpY + Math.sin(angle) * dist;
-          var br = 5 + rand() * 34;
-          var hue = 74 + rand() * 76; // yellow-green through deep teal-green
-          var light = 16 + rand() * 34;
-          var alpha = 0.4 + rand() * 0.45;
-          var grad = actx.createRadialGradient(bx, by, 0, bx, by, br);
-          grad.addColorStop(0, "hsla(" + hue + ", 72%, " + (light + 20) + "%, " + alpha + ")");
-          grad.addColorStop(1, "hsla(" + (hue - 8) + ", 65%, " + light + "%, 0)");
-          actx.fillStyle = grad;
+        var hue = 96 + rand() * 44; // saturated yellow-green through green
+        var light = 42 + rand() * 18;
+
+        actx.save();
+        actx.shadowColor = "hsla(" + hue + ", 100%, " + light + "%, 0.95)";
+        actx.shadowBlur = 12 + rand() * 12;
+        actx.strokeStyle = "hsla(" + hue + ", 95%, " + (light + 8) + "%, 0.55)";
+        actx.lineWidth = 5 + rand() * 8;
+        actx.lineCap = "round";
+        actx.lineJoin = "round";
+        drawSmoothPath(actx, pts);
+        actx.stroke();
+        actx.restore();
+
+        actx.save();
+        actx.strokeStyle = "hsla(" + hue + ", 100%, " + (light + 30) + "%, 0.95)";
+        actx.lineWidth = 1.2 + rand() * 1.8;
+        actx.lineCap = "round";
+        actx.lineJoin = "round";
+        drawSmoothPath(actx, pts);
+        actx.stroke();
+        actx.restore();
+      }
+
+      var sphereCount = Math.max(4, Math.round((width * height) / 220000));
+      for (var sp = 0; sp < sphereCount; sp++) {
+        var cx = rand() * width;
+        var cy = rand() * height;
+        var R = 30 + rand() * 60;
+        var sHue = 78 + rand() * 30;
+
+        var grad = actx.createRadialGradient(cx, cy, 0, cx, cy, R);
+        grad.addColorStop(0, "hsla(" + sHue + ", 100%, 62%, 0.95)");
+        grad.addColorStop(0.7, "hsla(" + sHue + ", 100%, 40%, 0.55)");
+        grad.addColorStop(1, "hsla(" + sHue + ", 100%, 20%, 0)");
+        actx.fillStyle = grad;
+        actx.beginPath();
+        actx.arc(cx, cy, R, 0, Math.PI * 2);
+        actx.fill();
+
+        var dotCount = 70;
+        for (var d = 0; d < dotCount; d++) {
+          var da = rand() * Math.PI * 2;
+          var dr = Math.sqrt(rand()) * R * 0.92;
+          var dx = cx + Math.cos(da) * dr;
+          var dy = cy + Math.sin(da) * dr;
+          actx.fillStyle = "hsla(" + (sHue + rand() * 12) + ", 100%, " + (70 + rand() * 20) + "%, " + (0.3 + rand() * 0.45) + ")";
           actx.beginPath();
-          actx.arc(bx, by, br, 0, Math.PI * 2);
+          actx.arc(dx, dy, 0.8 + rand() * 1.6, 0, Math.PI * 2);
           actx.fill();
         }
-      }
-
-      var speckleCount = Math.floor((width * height) / 700);
-      for (var s = 0; s < speckleCount; s++) {
-        var sx = rand() * width;
-        var sy = rand() * height;
-        var sr = 0.5 + rand() * 2;
-        var sHue = 78 + rand() * 70;
-        actx.fillStyle = "hsla(" + sHue + ", 65%, " + (28 + rand() * 45) + "%, " + (rand() * 0.4) + ")";
-        actx.beginPath();
-        actx.arc(sx, sy, sr, 0, Math.PI * 2);
-        actx.fill();
-      }
-
-      for (var v = 0; v < 10; v++) {
-        var vx = rand() * width;
-        var vy = rand() * height;
-        actx.beginPath();
-        actx.moveTo(vx, vy);
-        var segs = 4 + Math.floor(rand() * 5);
-        var cx = vx, cy = vy;
-        for (var k = 0; k < segs; k++) {
-          cx += (rand() - 0.5) * 130;
-          cy += (rand() - 0.5) * 130;
-          actx.lineTo(cx, cy);
-        }
-        actx.strokeStyle = "hsla(140, 55%, 6%, " + (0.2 + rand() * 0.25) + ")";
-        actx.lineWidth = 1 + rand() * 2.5;
-        actx.stroke();
       }
 
       return off;
