@@ -162,6 +162,14 @@ a { color: inherit; text-decoration: none; }
   height: 100%;
 }
 
+.reveal-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: screen;
+}
+
 .hero-inner {
   position: relative;
   z-index: 2;

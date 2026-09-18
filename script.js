@@ -225,4 +225,177 @@
   document.querySelectorAll(".swirl-canvas-small").forEach(function (c) {
     initSwirl(c, { density: 9000, minCells: 4, maxCells: 8, blur: 12, alpha: [0.35, 0.6] });
   });
+
+  /* ---------------------------------------------------------------
+     Hidden reveal artwork: a detailed, crisp algae illustration sits
+     invisible under the hero. Moving the mouse drags a soft "torch"
+     across it, briefly uncovering the artwork in a fading trail —
+     the same reveal-on-hover trick as landonorris.com's helmet, but
+     for a hand-drawn algae composition instead of a 3D model.
+  ----------------------------------------------------------------*/
+  (function () {
+    var canvas = document.getElementById("revealCanvas");
+    var hero = document.querySelector(".bold-hero");
+    if (!canvas || !hero || reduceMotion) return;
+
+    var ctx = canvas.getContext("2d");
+    var mask = document.createElement("canvas");
+    var mctx = mask.getContext("2d");
+    var artwork = null;
+    var mouseX = -9999, mouseY = -9999;
+    var running = false;
+    var rafId = null;
+
+    function seededRandom(seed) {
+      return function () {
+        seed |= 0;
+        seed = (seed + 0x6d2b79f5) | 0;
+        var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function drawCellShape(actx, cx, cy, radius, hue, rand) {
+      var points = 9;
+      actx.beginPath();
+      for (var i = 0; i <= points; i++) {
+        var angle = (i / points) * Math.PI * 2;
+        var r = radius * (0.8 + rand() * 0.4);
+        var px = cx + Math.cos(angle) * r;
+        var py = cy + Math.sin(angle) * r;
+        if (i === 0) actx.moveTo(px, py);
+        else actx.lineTo(px, py);
+      }
+      actx.closePath();
+      var grad = actx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.3);
+      grad.addColorStop(0, "hsla(" + hue + ", 78%, 62%, 0.9)");
+      grad.addColorStop(1, "hsla(" + (hue + 15) + ", 70%, 35%, 0.1)");
+      actx.fillStyle = grad;
+      actx.fill();
+      actx.lineWidth = 1.4;
+      actx.strokeStyle = "hsla(45, 65%, 92%, 0.4)";
+      actx.stroke();
+      if (rand() > 0.4) {
+        actx.beginPath();
+        actx.arc(cx + (rand() - 0.5) * radius * 0.4, cy + (rand() - 0.5) * radius * 0.4, radius * 0.16, 0, Math.PI * 2);
+        actx.fillStyle = "hsla(45, 70%, 92%, 0.55)";
+        actx.fill();
+      }
+    }
+
+    function buildArtwork(width, height) {
+      var off = document.createElement("canvas");
+      off.width = width;
+      off.height = height;
+      var actx = off.getContext("2d");
+      var rand = seededRandom(1337);
+      var hues = [175, 168, 42, 226, 190];
+
+      for (var f = 0; f < 12; f++) {
+        var x1 = rand() * width, y1 = rand() * height;
+        var x2 = x1 + (rand() - 0.5) * 460, y2 = y1 + (rand() - 0.5) * 460;
+        var cx1 = x1 + (rand() - 0.5) * 220, cy1 = y1 + (rand() - 0.5) * 220;
+        var cx2 = x2 + (rand() - 0.5) * 220, cy2 = y2 + (rand() - 0.5) * 220;
+        actx.beginPath();
+        actx.moveTo(x1, y1);
+        actx.bezierCurveTo(cx1, cy1, cx2, cy2, x2, y2);
+        var fHue = hues[f % hues.length];
+        actx.strokeStyle = "hsla(" + fHue + ", 70%, 62%, 0.5)";
+        actx.lineWidth = 2 + rand() * 2;
+        actx.stroke();
+      }
+
+      var cols = 9, rows = 6;
+      var cw = width / cols, ch = height / rows;
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          if (rand() < 0.24) continue;
+          var cx = c * cw + cw * 0.5 + (rand() - 0.5) * cw * 0.6;
+          var cy = r * ch + ch * 0.5 + (rand() - 0.5) * ch * 0.6;
+          var radius = 24 + rand() * 52;
+          var hue = hues[(r * cols + c) % hues.length] + (rand() * 10 - 5);
+          drawCellShape(actx, cx, cy, radius, hue, rand);
+        }
+      }
+      return off;
+    }
+
+    function resize() {
+      var rect = hero.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      mask.width = rect.width;
+      mask.height = rect.height;
+      artwork = buildArtwork(rect.width, rect.height);
+    }
+
+    function step() {
+      if (!running) return;
+      mctx.globalCompositeOperation = "destination-out";
+      mctx.fillStyle = "rgba(0, 0, 0, 0.045)";
+      mctx.fillRect(0, 0, mask.width, mask.height);
+
+      if (mouseX > -999) {
+        mctx.globalCompositeOperation = "source-over";
+        var grad = mctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 150);
+        grad.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+        grad.addColorStop(1, "rgba(255, 255, 255, 0)");
+        mctx.fillStyle = grad;
+        mctx.beginPath();
+        mctx.arc(mouseX, mouseY, 150, 0, Math.PI * 2);
+        mctx.fill();
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (artwork) ctx.drawImage(artwork, 0, 0);
+      ctx.globalCompositeOperation = "destination-in";
+      ctx.drawImage(mask, 0, 0);
+      ctx.globalCompositeOperation = "source-over";
+
+      rafId = window.requestAnimationFrame(step);
+    }
+
+    function start() {
+      if (running) return;
+      running = true;
+      rafId = window.requestAnimationFrame(step);
+    }
+    function stop() {
+      running = false;
+      if (rafId) window.cancelAnimationFrame(rafId);
+    }
+
+    hero.addEventListener("mousemove", function (e) {
+      var rect = hero.getBoundingClientRect();
+      mouseX = e.clientX - rect.left;
+      mouseY = e.clientY - rect.top;
+    });
+    hero.addEventListener("mouseleave", function () {
+      mouseX = -9999;
+      mouseY = -9999;
+    });
+
+    resize();
+    window.addEventListener("resize", resize);
+
+    if ("IntersectionObserver" in window) {
+      var obs = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting && !document.hidden) start();
+            else stop();
+          });
+        },
+        { threshold: 0.01 }
+      );
+      obs.observe(hero);
+    } else {
+      start();
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) stop();
+      else start();
+    });
+  })();
 })();
