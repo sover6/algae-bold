@@ -3,50 +3,6 @@
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* Cursor-trailing badge: appears and follows the mouse (with lag)
-     while hovering the hero name, echoing the "helmet follows cursor"
-     interaction on landonorris.com, adapted to a badge since there's
-     no portrait photo here yet. */
-  var heroName = document.getElementById("heroName");
-  var cursorTrail = document.getElementById("cursorTrail");
-  if (heroName && cursorTrail && !reduceMotion && window.matchMedia("(hover: hover)").matches) {
-    var targetX = 0, targetY = 0, curX = 0, curY = 0;
-    var trailRunning = false;
-
-    function trailStep() {
-      curX += (targetX - curX) * 0.18;
-      curY += (targetY - curY) * 0.18;
-      cursorTrail.style.transform = "translate(" + curX + "px, " + curY + "px) translate(-50%, -50%)";
-      if (cursorTrail.classList.contains("is-active")) {
-        window.requestAnimationFrame(trailStep);
-      } else {
-        trailRunning = false;
-      }
-    }
-
-    function startTrail() {
-      if (!trailRunning) {
-        trailRunning = true;
-        window.requestAnimationFrame(trailStep);
-      }
-    }
-
-    heroName.addEventListener("mouseenter", function (e) {
-      targetX = curX = e.clientX;
-      targetY = curY = e.clientY;
-      cursorTrail.style.transform = "translate(" + curX + "px, " + curY + "px) translate(-50%, -50%)";
-      cursorTrail.classList.add("is-active");
-      startTrail();
-    });
-    heroName.addEventListener("mousemove", function (e) {
-      targetX = e.clientX;
-      targetY = e.clientY;
-    });
-    heroName.addEventListener("mouseleave", function () {
-      cursorTrail.classList.remove("is-active");
-    });
-  }
-
   /* Nav overlay toggle */
   var navToggle = document.getElementById("navToggle");
   var navOverlay = document.getElementById("navOverlay");
@@ -256,68 +212,80 @@
       };
     }
 
-    function drawCellShape(actx, cx, cy, radius, hue, rand) {
-      var points = 9;
-      actx.beginPath();
-      for (var i = 0; i <= points; i++) {
-        var angle = (i / points) * Math.PI * 2;
-        var r = radius * (0.8 + rand() * 0.4);
-        var px = cx + Math.cos(angle) * r;
-        var py = cy + Math.sin(angle) * r;
-        if (i === 0) actx.moveTo(px, py);
-        else actx.lineTo(px, py);
-      }
-      actx.closePath();
-      var grad = actx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.3);
-      grad.addColorStop(0, "hsla(" + hue + ", 78%, 62%, 0.9)");
-      grad.addColorStop(1, "hsla(" + (hue + 15) + ", 70%, 35%, 0.1)");
-      actx.fillStyle = grad;
-      actx.fill();
-      actx.lineWidth = 1.4;
-      actx.strokeStyle = "hsla(45, 65%, 92%, 0.4)";
-      actx.stroke();
-      if (rand() > 0.4) {
-        actx.beginPath();
-        actx.arc(cx + (rand() - 0.5) * radius * 0.4, cy + (rand() - 0.5) * radius * 0.4, radius * 0.16, 0, Math.PI * 2);
-        actx.fillStyle = "hsla(45, 70%, 92%, 0.55)";
-        actx.fill();
-      }
-    }
-
+    /* A dense, mottled, all-green texture built from overlapping soft
+       clumps plus fine grain speckle — closer to a real algae culture
+       photo (chaotic, clumpy, richly green) than a clean illustration,
+       and deliberately distinct from the smooth ambient swirl canvas
+       used elsewhere on the page. */
     function buildArtwork(width, height) {
       var off = document.createElement("canvas");
       off.width = width;
       off.height = height;
       var actx = off.getContext("2d");
       var rand = seededRandom(1337);
-      var hues = [175, 168, 42, 226, 190];
 
-      for (var f = 0; f < 12; f++) {
-        var x1 = rand() * width, y1 = rand() * height;
-        var x2 = x1 + (rand() - 0.5) * 460, y2 = y1 + (rand() - 0.5) * 460;
-        var cx1 = x1 + (rand() - 0.5) * 220, cy1 = y1 + (rand() - 0.5) * 220;
-        var cx2 = x2 + (rand() - 0.5) * 220, cy2 = y2 + (rand() - 0.5) * 220;
+      var bg = actx.createLinearGradient(0, 0, width, height);
+      bg.addColorStop(0, "hsl(148, 60%, 9%)");
+      bg.addColorStop(0.5, "hsl(120, 55%, 13%)");
+      bg.addColorStop(1, "hsl(90, 50%, 10%)");
+      actx.fillStyle = bg;
+      actx.fillRect(0, 0, width, height);
+
+      var clumpCount = Math.max(10, Math.round((width * height) / 90000));
+      for (var i = 0; i < clumpCount; i++) {
+        var clumpX = rand() * width;
+        var clumpY = rand() * height;
+        var clumpR = 90 + rand() * 220;
+        var blobCount = 35 + Math.floor(rand() * 45);
+
+        for (var j = 0; j < blobCount; j++) {
+          var angle = rand() * Math.PI * 2;
+          var dist = Math.pow(rand(), 1.6) * clumpR;
+          var bx = clumpX + Math.cos(angle) * dist;
+          var by = clumpY + Math.sin(angle) * dist;
+          var br = 5 + rand() * 34;
+          var hue = 74 + rand() * 76; // yellow-green through deep teal-green
+          var light = 16 + rand() * 34;
+          var alpha = 0.4 + rand() * 0.45;
+          var grad = actx.createRadialGradient(bx, by, 0, bx, by, br);
+          grad.addColorStop(0, "hsla(" + hue + ", 72%, " + (light + 20) + "%, " + alpha + ")");
+          grad.addColorStop(1, "hsla(" + (hue - 8) + ", 65%, " + light + "%, 0)");
+          actx.fillStyle = grad;
+          actx.beginPath();
+          actx.arc(bx, by, br, 0, Math.PI * 2);
+          actx.fill();
+        }
+      }
+
+      var speckleCount = Math.floor((width * height) / 700);
+      for (var s = 0; s < speckleCount; s++) {
+        var sx = rand() * width;
+        var sy = rand() * height;
+        var sr = 0.5 + rand() * 2;
+        var sHue = 78 + rand() * 70;
+        actx.fillStyle = "hsla(" + sHue + ", 65%, " + (28 + rand() * 45) + "%, " + (rand() * 0.4) + ")";
         actx.beginPath();
-        actx.moveTo(x1, y1);
-        actx.bezierCurveTo(cx1, cy1, cx2, cy2, x2, y2);
-        var fHue = hues[f % hues.length];
-        actx.strokeStyle = "hsla(" + fHue + ", 70%, 62%, 0.5)";
-        actx.lineWidth = 2 + rand() * 2;
+        actx.arc(sx, sy, sr, 0, Math.PI * 2);
+        actx.fill();
+      }
+
+      for (var v = 0; v < 10; v++) {
+        var vx = rand() * width;
+        var vy = rand() * height;
+        actx.beginPath();
+        actx.moveTo(vx, vy);
+        var segs = 4 + Math.floor(rand() * 5);
+        var cx = vx, cy = vy;
+        for (var k = 0; k < segs; k++) {
+          cx += (rand() - 0.5) * 130;
+          cy += (rand() - 0.5) * 130;
+          actx.lineTo(cx, cy);
+        }
+        actx.strokeStyle = "hsla(140, 55%, 6%, " + (0.2 + rand() * 0.25) + ")";
+        actx.lineWidth = 1 + rand() * 2.5;
         actx.stroke();
       }
 
-      var cols = 9, rows = 6;
-      var cw = width / cols, ch = height / rows;
-      for (var r = 0; r < rows; r++) {
-        for (var c = 0; c < cols; c++) {
-          if (rand() < 0.24) continue;
-          var cx = c * cw + cw * 0.5 + (rand() - 0.5) * cw * 0.6;
-          var cy = r * ch + ch * 0.5 + (rand() - 0.5) * ch * 0.6;
-          var radius = 24 + rand() * 52;
-          var hue = hues[(r * cols + c) % hues.length] + (rand() * 10 - 5);
-          drawCellShape(actx, cx, cy, radius, hue, rand);
-        }
-      }
       return off;
     }
 
