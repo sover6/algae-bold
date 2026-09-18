@@ -3,6 +3,50 @@
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  /* Cursor-trailing badge: appears and follows the mouse (with lag)
+     while hovering the hero name, echoing the "helmet follows cursor"
+     interaction on landonorris.com, adapted to a badge since there's
+     no portrait photo here yet. */
+  var heroName = document.getElementById("heroName");
+  var cursorTrail = document.getElementById("cursorTrail");
+  if (heroName && cursorTrail && !reduceMotion && window.matchMedia("(hover: hover)").matches) {
+    var targetX = 0, targetY = 0, curX = 0, curY = 0;
+    var trailRunning = false;
+
+    function trailStep() {
+      curX += (targetX - curX) * 0.18;
+      curY += (targetY - curY) * 0.18;
+      cursorTrail.style.transform = "translate(" + curX + "px, " + curY + "px) translate(-50%, -50%)";
+      if (cursorTrail.classList.contains("is-active")) {
+        window.requestAnimationFrame(trailStep);
+      } else {
+        trailRunning = false;
+      }
+    }
+
+    function startTrail() {
+      if (!trailRunning) {
+        trailRunning = true;
+        window.requestAnimationFrame(trailStep);
+      }
+    }
+
+    heroName.addEventListener("mouseenter", function (e) {
+      targetX = curX = e.clientX;
+      targetY = curY = e.clientY;
+      cursorTrail.style.transform = "translate(" + curX + "px, " + curY + "px) translate(-50%, -50%)";
+      cursorTrail.classList.add("is-active");
+      startTrail();
+    });
+    heroName.addEventListener("mousemove", function (e) {
+      targetX = e.clientX;
+      targetY = e.clientY;
+    });
+    heroName.addEventListener("mouseleave", function () {
+      cursorTrail.classList.remove("is-active");
+    });
+  }
+
   /* Nav overlay toggle */
   var navToggle = document.getElementById("navToggle");
   var navOverlay = document.getElementById("navOverlay");

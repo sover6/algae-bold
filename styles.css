@@ -205,6 +205,52 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 0.15em;
 }
 
+/* ---------- Cursor-trailing badge (hover the name) ---------- */
+.cursor-trail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 55;
+  pointer-events: none;
+  will-change: transform;
+}
+.cursor-trail-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px 10px 10px;
+  border-radius: 999px;
+  background: var(--teal-bright);
+  color: var(--bg-dark);
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  box-shadow: 0 20px 40px -14px rgba(47, 224, 201, 0.55);
+  white-space: nowrap;
+}
+.cursor-trail.is-active .cursor-trail-inner {
+  opacity: 1;
+  transform: scale(1);
+}
+.cursor-trail svg {
+  animation: cursorSpin 6s linear infinite;
+  flex-shrink: 0;
+}
+.cursor-trail span {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+@keyframes cursorSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.hero-name { cursor: default; }
+
+@media (hover: none) {
+  .cursor-trail { display: none; }
+}
+
 /* ---------- Marquee ---------- */
 .marquee {
   background: var(--teal-bright);
@@ -481,4 +527,5 @@ a { color: inherit; text-decoration: none; }
   html { scroll-behavior: auto; }
   .reveal-b { opacity: 1; transform: none; transition: none; }
   .marquee-track { animation: none; }
+  .cursor-trail { display: none; }
 }
