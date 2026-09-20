@@ -183,10 +183,11 @@
   });
 
   /* ---------------------------------------------------------------
-     Reveal: moving the mouse over the portrait panel drags a soft
-     mask that briefly uncovers a fluid-pour painting. In the space
-     around her it shows in the painting's original colors; over her
-     own portrait it shows a green version of the same painting.
+     Reveal: moving the mouse over the portrait panel drags a small
+     hard-edged blob that briefly uncovers a fluid-pour painting, in
+     the space around her only (her silhouette is cut out of the
+     reveal). The portrait also drifts a little up/down with scroll;
+     the silhouette cut-out moves with it.
   ----------------------------------------------------------------*/
   (function () {
     var canvas = document.getElementById("revealCanvas");
@@ -197,12 +198,13 @@
     function makeCanvas() { return document.createElement("canvas"); }
     var ctx = canvas.getContext("2d");
     var mask = makeCanvas(), mctx = mask.getContext("2d");
-    var personMask = makeCanvas(), personMaskCtx = personMask.getContext("2d");
     var bgLayer = makeCanvas(), bgCtx = bgLayer.getContext("2d");
-    var personLayer = makeCanvas(), personCtx = personLayer.getContext("2d");
-    var artOriginal = null, artGreen = null;
+    var artOriginal = null;
     var mouseX = -9999, mouseY = -9999;
+    var cur = { x: -9999, y: -9999 }, lastDraw = null;
     var running = false, rafId = null;
+
+    var SCALE = 1.06, MAX_DY = 24, dy = 0;
 
     var art = new Image();
     var artReady = false;
@@ -211,71 +213,41 @@
 
     var personAlphaImg = new Image();
     var personAlphaReady = false;
-    personAlphaImg.onload = function () { personAlphaReady = true; buildPersonMask(); };
+    personAlphaImg.onload = function () { personAlphaReady = true; };
     personAlphaImg.src = "assets/img/portrait-alpha.png";
 
-    // Green ramp: luminance of the painting mapped from deep forest to pale lime.
-    var RAMP = [
-      [0.0, [3, 26, 10]], [0.35, [11, 90, 31]], [0.6, [47, 174, 58]],
-      [0.82, [155, 232, 59]], [1.0, [239, 255, 196]]
-    ];
-    var LUT = [];
-    for (var i = 0; i < 256; i++) {
-      var t = Math.min(1, Math.max(0, (i / 255 - 0.06) / 0.88));
-      var k = 0;
-      while (k < RAMP.length - 2 && t > RAMP[k + 1][0]) k++;
-      var a = RAMP[k], b = RAMP[k + 1];
-      var f = (t - a[0]) / (b[0] - a[0]);
-      LUT.push([0, 1, 2].map(function (c) { return Math.round(a[1][c] + (b[1][c] - a[1][c]) * f); }));
-    }
-
-    function coverDraw(target, w, h) {
+    function buildArtwork(w, h) {
+      artOriginal = makeCanvas();
+      artOriginal.width = w;
+      artOriginal.height = h;
       var s = Math.max(w / art.naturalWidth, h / art.naturalHeight);
       var dw = art.naturalWidth * s, dh = art.naturalHeight * s;
-      target.drawImage(art, (w - dw) / 2, (h - dh) / 2, dw, dh);
-    }
-
-    function buildArtworks(w, h) {
-      artOriginal = makeCanvas();
-      artOriginal.width = w; artOriginal.height = h;
-      coverDraw(artOriginal.getContext("2d"), w, h);
-
-      artGreen = makeCanvas();
-      artGreen.width = w; artGreen.height = h;
-      var gctx = artGreen.getContext("2d");
-      gctx.drawImage(artOriginal, 0, 0);
-      var img = gctx.getImageData(0, 0, w, h), d = img.data;
-      for (var p = 0; p < d.length; p += 4) {
-        var lum = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]);
-        var c = LUT[lum];
-        d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2];
-      }
-      gctx.putImageData(img, 0, 0);
-    }
-
-    function buildPersonMask() {
-      var panelRect = hero.getBoundingClientRect();
-      var imgRect = portraitImg.getBoundingClientRect();
-      personMask.width = Math.round(panelRect.width);
-      personMask.height = Math.round(panelRect.height);
-      if (!personAlphaReady || !panelRect.width) return;
-      personMaskCtx.drawImage(
-        personAlphaImg,
-        imgRect.left - panelRect.left, imgRect.top - panelRect.top,
-        imgRect.width, imgRect.height
-      );
+      artOriginal.getContext("2d").drawImage(art, (w - dw) / 2, (h - dh) / 2, dw, dh);
     }
 
     function resize() {
       var rect = hero.getBoundingClientRect();
       var w = Math.round(rect.width), h = Math.round(rect.height);
       if (!w || !h) return;
-      [canvas, mask, bgLayer, personLayer].forEach(function (c) { c.width = w; c.height = h; });
-      if (artReady) buildArtworks(w, h);
-      buildPersonMask();
+      [canvas, mask, bgLayer].forEach(function (c) { c.width = w; c.height = h; });
+      if (artReady) buildArtwork(w, h);
+      updateParallax();
     }
 
-    var cur = { x: -9999, y: -9999 }, lastDraw = null;
+    function updateParallax() {
+      var r = hero.getBoundingClientRect();
+      var center = r.top + r.height / 2;
+      dy = Math.max(-MAX_DY, Math.min(MAX_DY, (window.innerHeight / 2 - center) * 0.08));
+      portraitImg.style.transformOrigin = "50% 0";
+      portraitImg.style.transform = "translate3d(0," + dy.toFixed(1) + "px,0) scale(" + SCALE + ")";
+    }
+
+    // Cut her silhouette out of the reveal, tracking the portrait's scale + offset.
+    function drawPerson(target) {
+      var l = portraitImg.offsetLeft, t = portraitImg.offsetTop;
+      var w = portraitImg.offsetWidth, h = portraitImg.offsetHeight;
+      target.drawImage(personAlphaImg, l - ((SCALE - 1) * w) / 2, t + dy, w * SCALE, h * SCALE);
+    }
 
     function blob(x, y, R, t) {
       mctx.beginPath();
@@ -293,7 +265,7 @@
     function step(t) {
       if (!running) return;
       var w = canvas.width, h = canvas.height;
-      var R = Math.max(110, portraitImg.getBoundingClientRect().width * 0.26);
+      var R = Math.max(60, portraitImg.offsetWidth * 0.15);
 
       mctx.globalCompositeOperation = "destination-out";
       mctx.fillStyle = "rgba(0, 0, 0, 0.03)";
@@ -306,9 +278,9 @@
         cur.x += (mouseX - cur.x) * 0.4;
         cur.y += (mouseY - cur.y) * 0.4;
         if (lastDraw) {
-          var dx = cur.x - lastDraw.x, dy = cur.y - lastDraw.y;
-          var steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (R * 0.35)));
-          for (var s = 1; s <= steps; s++) blob(lastDraw.x + dx * s / steps, lastDraw.y + dy * s / steps, R, t);
+          var dx = cur.x - lastDraw.x, dyy = cur.y - lastDraw.y;
+          var steps = Math.max(1, Math.ceil(Math.hypot(dx, dyy) / (R * 0.35)));
+          for (var s = 1; s <= steps; s++) blob(lastDraw.x + dx * s / steps, lastDraw.y + dyy * s / steps, R, t);
         } else {
           blob(cur.x, cur.y, R, t);
         }
@@ -320,27 +292,15 @@
 
       ctx.clearRect(0, 0, w, h);
       if (artOriginal && personAlphaReady) {
-        // around her: original painting, cut away where she is
         bgCtx.globalCompositeOperation = "source-over";
         bgCtx.clearRect(0, 0, w, h);
         bgCtx.drawImage(artOriginal, 0, 0);
         bgCtx.globalCompositeOperation = "destination-in";
         bgCtx.drawImage(mask, 0, 0);
         bgCtx.globalCompositeOperation = "destination-out";
-        bgCtx.drawImage(personMask, 0, 0);
+        drawPerson(bgCtx);
         bgCtx.globalCompositeOperation = "source-over";
-
-        // over her: green painting, kept only where she is
-        personCtx.globalCompositeOperation = "source-over";
-        personCtx.clearRect(0, 0, w, h);
-        personCtx.drawImage(artGreen, 0, 0);
-        personCtx.globalCompositeOperation = "destination-in";
-        personCtx.drawImage(mask, 0, 0);
-        personCtx.drawImage(personMask, 0, 0);
-        personCtx.globalCompositeOperation = "source-over";
-
         ctx.drawImage(bgLayer, 0, 0);
-        ctx.drawImage(personLayer, 0, 0);
       }
 
       rafId = window.requestAnimationFrame(step);
@@ -365,6 +325,13 @@
       mouseX = -9999;
       mouseY = -9999;
     });
+
+    var scrollTicking = false;
+    window.addEventListener("scroll", function () {
+      if (scrollTicking) return;
+      scrollTicking = true;
+      window.requestAnimationFrame(function () { updateParallax(); scrollTicking = false; });
+    }, { passive: true });
 
     resize();
     window.addEventListener("resize", resize);
