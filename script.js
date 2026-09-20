@@ -183,11 +183,10 @@
   });
 
   /* ---------------------------------------------------------------
-     Hidden reveal artwork: a detailed, crisp algae illustration sits
-     invisible under the hero. Moving the mouse drags a soft "torch"
-     across it, briefly uncovering the artwork in a fading trail —
-     the same reveal-on-hover trick as landonorris.com's helmet, but
-     for a hand-drawn algae composition instead of a 3D model.
+     Reveal: moving the mouse over the portrait panel drags a soft
+     mask that briefly uncovers a fluid-pour painting. In the space
+     around her it shows in the painting's original colors; over her
+     own portrait it shows a green version of the same painting.
   ----------------------------------------------------------------*/
   (function () {
     var canvas = document.getElementById("revealCanvas");
@@ -195,219 +194,129 @@
     var portraitImg = document.querySelector(".hero-portrait");
     if (!canvas || !hero || !portraitImg || reduceMotion) return;
 
+    function makeCanvas() { return document.createElement("canvas"); }
     var ctx = canvas.getContext("2d");
-    var mask = document.createElement("canvas");
-    var mctx = mask.getContext("2d");
-    var personMask = document.createElement("canvas");
-    var personMaskCtx = personMask.getContext("2d");
+    var mask = makeCanvas(), mctx = mask.getContext("2d");
+    var personMask = makeCanvas(), personMaskCtx = personMask.getContext("2d");
+    var bgLayer = makeCanvas(), bgCtx = bgLayer.getContext("2d");
+    var personLayer = makeCanvas(), personCtx = personLayer.getContext("2d");
+    var artOriginal = null, artGreen = null;
+    var mouseX = -9999, mouseY = -9999;
+    var running = false, rafId = null;
+
+    var art = new Image();
+    var artReady = false;
+    art.onload = function () { artReady = true; resize(); };
+    art.src = "assets/img/pour-art.jpg";
+
     var personAlphaImg = new Image();
     var personAlphaReady = false;
-    personAlphaImg.onload = function () {
-      personAlphaReady = true;
-      buildPersonMask();
-    };
+    personAlphaImg.onload = function () { personAlphaReady = true; buildPersonMask(); };
     personAlphaImg.src = "assets/img/portrait-alpha.png";
 
-    var artwork = null;
-    var mouseX = -9999, mouseY = -9999;
-    var running = false;
-    var rafId = null;
-
-    function seededRandom(seed) {
-      return function () {
-        seed |= 0;
-        seed = (seed + 0x6d2b79f5) | 0;
-        var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-      };
+    // Green ramp: luminance of the painting mapped from deep forest to pale lime.
+    var RAMP = [
+      [0.0, [3, 26, 10]], [0.35, [11, 90, 31]], [0.6, [47, 174, 58]],
+      [0.82, [155, 232, 59]], [1.0, [239, 255, 196]]
+    ];
+    var LUT = [];
+    for (var i = 0; i < 256; i++) {
+      var t = Math.min(1, Math.max(0, (i / 255 - 0.06) / 0.88));
+      var k = 0;
+      while (k < RAMP.length - 2 && t > RAMP[k + 1][0]) k++;
+      var a = RAMP[k], b = RAMP[k + 1];
+      var f = (t - a[0]) / (b[0] - a[0]);
+      LUT.push([0, 1, 2].map(function (c) { return Math.round(a[1][c] + (b[1][c] - a[1][c]) * f); }));
     }
 
-    /* A dense, mottled, all-green texture built from overlapping soft
-       clumps plus fine grain speckle — closer to a real algae culture
-       photo (chaotic, clumpy, richly green) than a clean illustration,
-       and deliberately distinct from the smooth ambient swirl canvas
-       used elsewhere on the page. */
-    function drawSmoothPath(actx, pts) {
-      actx.beginPath();
-      actx.moveTo(pts[0][0], pts[0][1]);
-      for (var i = 1; i < pts.length - 1; i++) {
-        var xc = (pts[i][0] + pts[i + 1][0]) / 2;
-        var yc = (pts[i][1] + pts[i + 1][1]) / 2;
-        actx.quadraticCurveTo(pts[i][0], pts[i][1], xc, yc);
-      }
-      actx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    function coverDraw(target, w, h) {
+      var s = Math.max(w / art.naturalWidth, h / art.naturalHeight);
+      var dw = art.naturalWidth * s, dh = art.naturalHeight * s;
+      target.drawImage(art, (w - dw) / 2, (h - dh) / 2, dw, dh);
     }
 
-    /* Acrylic-pour / cell-art style: irregular organic "cells" of
-       varying size in a warm ochre/gold/green/blue palette, each with
-       a darker outline, nested smaller bubble-cells inside the larger
-       ones, and fine pale veining threading between regions — modeled
-       directly on a fluid-art pour painting reference rather than a
-       microscopy photo. */
-    function buildArtwork(width, height) {
-      var off = document.createElement("canvas");
-      off.width = width;
-      off.height = height;
-      var actx = off.getContext("2d");
-      var rand = seededRandom(2024);
+    function buildArtworks(w, h) {
+      artOriginal = makeCanvas();
+      artOriginal.width = w; artOriginal.height = h;
+      coverDraw(artOriginal.getContext("2d"), w, h);
 
-      var bg = actx.createLinearGradient(0, 0, width, height);
-      bg.addColorStop(0, "#c98b2e");
-      bg.addColorStop(0.5, "#a9761f");
-      bg.addColorStop(1, "#7a5a1c");
-      actx.fillStyle = bg;
-      actx.fillRect(0, 0, width, height);
-
-      var palette = [
-        "#d9a441", "#c9962e", "#e0b959", // gold / ochre
-        "#3c6b35", "#4f8a3d", "#6fae4a", // greens
-        "#215a52", "#2f7d72", // deep teal
-        "#2f6f8f", "#4fa3c9", // blue accents
-        "#7a4a2a", "#5c3a22", // brown
-        "#f2ece0" // cream highlight
-      ];
-
-      function organicBlob(cx, cy, radius, wobble) {
-        var pts = [];
-        var n = 10;
-        for (var i = 0; i <= n; i++) {
-          var angle = (i / n) * Math.PI * 2;
-          var r = radius * (1 - wobble / 2 + rand() * wobble);
-          pts.push([cx + Math.cos(angle) * r, cy + Math.sin(angle) * r]);
-        }
-        return pts;
+      artGreen = makeCanvas();
+      artGreen.width = w; artGreen.height = h;
+      var gctx = artGreen.getContext("2d");
+      gctx.drawImage(artOriginal, 0, 0);
+      var img = gctx.getImageData(0, 0, w, h), d = img.data;
+      for (var p = 0; p < d.length; p += 4) {
+        var lum = Math.round(0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]);
+        var c = LUT[lum];
+        d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2];
       }
-
-      function fillBlobPath(pts, color, outline, outlineWidth) {
-        actx.beginPath();
-        actx.moveTo(pts[0][0], pts[0][1]);
-        for (var i = 1; i < pts.length; i++) {
-          var p0 = pts[i - 1], p1 = pts[i];
-          var mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
-          actx.quadraticCurveTo(p0[0], p0[1], mx, my);
-        }
-        actx.closePath();
-        actx.fillStyle = color;
-        actx.fill();
-        if (outline) {
-          actx.strokeStyle = outline;
-          actx.lineWidth = outlineWidth || 2;
-          actx.stroke();
-        }
-      }
-
-      var macroCount = Math.max(8, Math.round((width * height) / 42000));
-      var macros = [];
-      for (var i = 0; i < macroCount; i++) {
-        var cx = rand() * width, cy = rand() * height;
-        var radius = 40 + rand() * 90;
-        var color = palette[Math.floor(rand() * palette.length)];
-        var pts = organicBlob(cx, cy, radius, 0.35);
-        fillBlobPath(pts, color, "rgba(30, 30, 20, 0.55)", 2.5 + rand() * 2);
-        macros.push({ cx: cx, cy: cy, radius: radius });
-      }
-
-      macros.forEach(function (m) {
-        var microCount = 3 + Math.floor(rand() * 6);
-        for (var j = 0; j < microCount; j++) {
-          var a = rand() * Math.PI * 2;
-          var d = rand() * m.radius * 0.7;
-          var mx = m.cx + Math.cos(a) * d;
-          var my = m.cy + Math.sin(a) * d;
-          var mr = 6 + rand() * 20;
-          var mcolor = palette[Math.floor(rand() * palette.length)];
-          var pts = organicBlob(mx, my, mr, 0.3);
-          fillBlobPath(pts, mcolor, "rgba(30, 30, 20, 0.5)", 1.4 + rand());
-        }
-      });
-
-      var scatterCount = Math.max(20, Math.round((width * height) / 9000));
-      for (var s = 0; s < scatterCount; s++) {
-        var sx = rand() * width, sy = rand() * height;
-        var sr = 3 + rand() * 12;
-        var scolor = palette[Math.floor(rand() * palette.length)];
-        var pts2 = organicBlob(sx, sy, sr, 0.4);
-        fillBlobPath(pts2, scolor, "rgba(30, 30, 20, 0.4)", 1 + rand());
-      }
-
-      var veinCount = 16;
-      for (var v = 0; v < veinCount; v++) {
-        var vx = rand() * width, vy = rand() * height;
-        actx.beginPath();
-        actx.moveTo(vx, vy);
-        var segs = 5 + Math.floor(rand() * 6);
-        var cx2 = vx, cy2 = vy;
-        var angle2 = rand() * Math.PI * 2;
-        for (var k = 0; k < segs; k++) {
-          angle2 += (rand() - 0.5) * 1.2;
-          cx2 += Math.cos(angle2) * (30 + rand() * 50);
-          cy2 += Math.sin(angle2) * (30 + rand() * 50);
-          actx.lineTo(cx2, cy2);
-        }
-        actx.strokeStyle = "rgba(245, 238, 220, " + (0.35 + rand() * 0.35) + ")";
-        actx.lineWidth = 1 + rand() * 1.8;
-        actx.stroke();
-      }
-
-      return off;
+      gctx.putImageData(img, 0, 0);
     }
 
     function buildPersonMask() {
       var panelRect = hero.getBoundingClientRect();
       var imgRect = portraitImg.getBoundingClientRect();
-      personMask.width = panelRect.width;
-      personMask.height = panelRect.height;
+      personMask.width = Math.round(panelRect.width);
+      personMask.height = Math.round(panelRect.height);
       if (!personAlphaReady || !panelRect.width) return;
-      personMaskCtx.clearRect(0, 0, personMask.width, personMask.height);
       personMaskCtx.drawImage(
         personAlphaImg,
-        imgRect.left - panelRect.left,
-        imgRect.top - panelRect.top,
-        imgRect.width,
-        imgRect.height
+        imgRect.left - panelRect.left, imgRect.top - panelRect.top,
+        imgRect.width, imgRect.height
       );
     }
 
     function resize() {
       var rect = hero.getBoundingClientRect();
-      canvas.width = rect.width;
-      canvas.height = rect.height;
-      mask.width = rect.width;
-      mask.height = rect.height;
-      artwork = buildArtwork(rect.width, rect.height);
+      var w = Math.round(rect.width), h = Math.round(rect.height);
+      if (!w || !h) return;
+      [canvas, mask, bgLayer, personLayer].forEach(function (c) { c.width = w; c.height = h; });
+      if (artReady) buildArtworks(w, h);
       buildPersonMask();
     }
 
     function step() {
       if (!running) return;
+      var w = canvas.width, h = canvas.height;
+
       mctx.globalCompositeOperation = "destination-out";
       mctx.fillStyle = "rgba(0, 0, 0, 0.045)";
-      mctx.fillRect(0, 0, mask.width, mask.height);
-
+      mctx.fillRect(0, 0, w, h);
       if (mouseX > -999) {
         mctx.globalCompositeOperation = "source-over";
-        var grad = mctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 150);
-        grad.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+        var grad = mctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 170);
+        grad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
         grad.addColorStop(1, "rgba(255, 255, 255, 0)");
         mctx.fillStyle = grad;
         mctx.beginPath();
-        mctx.arc(mouseX, mouseY, 150, 0, Math.PI * 2);
+        mctx.arc(mouseX, mouseY, 170, 0, Math.PI * 2);
         mctx.fill();
       }
 
-      // Exclude her silhouette: the reveal should only ever show in the
-      // background around her, never over her actual photo.
-      if (personAlphaReady) {
-        mctx.globalCompositeOperation = "destination-out";
-        mctx.drawImage(personMask, 0, 0);
-      }
+      ctx.clearRect(0, 0, w, h);
+      if (artOriginal && personAlphaReady) {
+        // around her: original painting, cut away where she is
+        bgCtx.globalCompositeOperation = "source-over";
+        bgCtx.clearRect(0, 0, w, h);
+        bgCtx.drawImage(artOriginal, 0, 0);
+        bgCtx.globalCompositeOperation = "destination-in";
+        bgCtx.drawImage(mask, 0, 0);
+        bgCtx.globalCompositeOperation = "destination-out";
+        bgCtx.drawImage(personMask, 0, 0);
+        bgCtx.globalCompositeOperation = "source-over";
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (artwork) ctx.drawImage(artwork, 0, 0);
-      ctx.globalCompositeOperation = "destination-in";
-      ctx.drawImage(mask, 0, 0);
-      ctx.globalCompositeOperation = "source-over";
+        // over her: green painting, kept only where she is
+        personCtx.globalCompositeOperation = "source-over";
+        personCtx.clearRect(0, 0, w, h);
+        personCtx.drawImage(artGreen, 0, 0);
+        personCtx.globalCompositeOperation = "destination-in";
+        personCtx.drawImage(mask, 0, 0);
+        personCtx.drawImage(personMask, 0, 0);
+        personCtx.globalCompositeOperation = "source-over";
+
+        ctx.drawImage(bgLayer, 0, 0);
+        ctx.drawImage(personLayer, 0, 0);
+      }
 
       rafId = window.requestAnimationFrame(step);
     }
@@ -434,11 +343,8 @@
 
     resize();
     window.addEventListener("resize", resize);
-    if (portraitImg.complete) {
-      resize();
-    } else {
-      portraitImg.addEventListener("load", resize);
-    }
+    if (portraitImg.complete) resize();
+    else portraitImg.addEventListener("load", resize);
 
     if ("IntersectionObserver" in window) {
       var obs = new IntersectionObserver(
