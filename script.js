@@ -275,22 +275,47 @@
       buildPersonMask();
     }
 
-    function step() {
+    var cur = { x: -9999, y: -9999 }, lastDraw = null;
+
+    function blob(x, y, R, t) {
+      mctx.beginPath();
+      var n = 30;
+      for (var i = 0; i <= n; i++) {
+        var a = (i / n) * Math.PI * 2;
+        var r = R * (1 + 0.16 * Math.sin(a * 3 + t * 0.004) + 0.1 * Math.sin(a * 5 - t * 0.003));
+        var px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+        if (i === 0) mctx.moveTo(px, py); else mctx.lineTo(px, py);
+      }
+      mctx.closePath();
+      mctx.fill();
+    }
+
+    function step(t) {
       if (!running) return;
       var w = canvas.width, h = canvas.height;
+      var R = Math.max(110, portraitImg.getBoundingClientRect().width * 0.26);
 
       mctx.globalCompositeOperation = "destination-out";
-      mctx.fillStyle = "rgba(0, 0, 0, 0.045)";
+      mctx.fillStyle = "rgba(0, 0, 0, 0.03)";
       mctx.fillRect(0, 0, w, h);
+      mctx.globalCompositeOperation = "source-over";
+      mctx.fillStyle = "#fff";
+
       if (mouseX > -999) {
-        mctx.globalCompositeOperation = "source-over";
-        var grad = mctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 170);
-        grad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
-        grad.addColorStop(1, "rgba(255, 255, 255, 0)");
-        mctx.fillStyle = grad;
-        mctx.beginPath();
-        mctx.arc(mouseX, mouseY, 170, 0, Math.PI * 2);
-        mctx.fill();
+        if (cur.x < -999) { cur.x = mouseX; cur.y = mouseY; lastDraw = null; }
+        cur.x += (mouseX - cur.x) * 0.4;
+        cur.y += (mouseY - cur.y) * 0.4;
+        if (lastDraw) {
+          var dx = cur.x - lastDraw.x, dy = cur.y - lastDraw.y;
+          var steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (R * 0.35)));
+          for (var s = 1; s <= steps; s++) blob(lastDraw.x + dx * s / steps, lastDraw.y + dy * s / steps, R, t);
+        } else {
+          blob(cur.x, cur.y, R, t);
+        }
+        lastDraw = { x: cur.x, y: cur.y };
+      } else {
+        cur.x = cur.y = -9999;
+        lastDraw = null;
       }
 
       ctx.clearRect(0, 0, w, h);
